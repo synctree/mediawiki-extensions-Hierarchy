@@ -386,7 +386,7 @@ function wfHierarchyTopRender( &$parser ) {
 
     // index article
     if ($item->mIndexArticleId) {
-    		$msg = htmlspecialchars(wfMsg('hierarchy_index'));
+    	$msg = htmlspecialchars(wfMsg('hierarchy_index'));
         $index_article = wfHierarchyArticleLink($item->mIndexArticleId, $msg);
     } else {
         $index_article = "";
