@@ -19,7 +19,7 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
-$HierarchyVersion = '1.0.0';
+$HierarchyVersion = '1.1.0';
 
 #----------------------------------------------------------------------------
 #    Internationalized messages
@@ -31,16 +31,25 @@ $wgHierarchyMessages = array();
 // English
 $wgHierarchyMessages['en'] = array(
     $wgHierarchyPrefix . 'index' => "Index",    
+    $wgHierarchyPrefix . 'subordinates_separator' => "----\n'''Subordinate pages:'''",
 );
 
-// Portuguese
+// Portuguese - Português
 $wgHierarchyMessages['pt'] = array(
     $wgHierarchyPrefix . 'index' => utf8_encode("Índice"),
+    $wgHierarchyPrefix . 'subordinates_separator' => utf8_encode("----\n'''Páginas subordinadas:'''"),    
 );
 
-// Portuguese (Brazilian)
+// Portuguese (Brazilian) - Português (brasileiro)
 $wgHierarchyMessages['pt-br'] = array(
     $wgHierarchyPrefix . 'index' => utf8_encode("Índice"),
+    $wgHierarchyPrefix . 'subordinates_separator' => utf8_encode("----\n'''Páginas subordinadas:'''"),    
+);
+
+// German - Deutsch
+$wgHierarchyMessages['de'] = array(
+    $wgHierarchyPrefix . 'index' => utf8_encode("Inhalt"),
+    $wgHierarchyPrefix . 'subordinates_separator' => utf8_encode("----\n'''Unterseiten:'''"),   
 );
 
 #----------------------------------------------------------------------------
@@ -72,6 +81,11 @@ function wfHierarchyExtension() {
     }    
 }
 
+$wgHierarchyEmbedSubordinates = true;
+$wgHierarchyNavigateSubordinates = true;
+$wgHierarchyNavigationBoxBaseWidth = 140;
+$wgHierarchyNavigationBoxIncrement = 19;
+    
 #----------------------------------------------------------------------------
 #    Extension implementation
 #----------------------------------------------------------------------------
@@ -383,45 +397,127 @@ function wfHierarchyTopRender( &$parser ) {
     // get item
     $item = wfHierarchyGetItem($parser);
     if ($item == NULL) return "";
+    
+    // build parent tree
+    $parent_tree = array();
+    $parent_id = $item->mParentArticleId;  // start with parent of current item
+    do {
+    	if (!empty($parent_id)) {
+	    	$parent = HierarchyItem::newFromArticleId($parent_id);
+	    	if (!empty($parent)) {
+	    		array_unshift($parent_tree, $parent);
+    			$parent_id = $parent->mParentArticleId;  // go up on parent chain
+    		} else {
+    			$parent_id = 0;
+    		}
+    	}
+    } while (!empty($parent_id));  // go all the way up to the top
+    if (count($parent_tree) == 0) $parent_tree[] = $item;  // item is the top hierarchy page
+    
+    // convert parent tree to article tree
+    $article_tree = array();
+    $max_level = 0;
+    foreach ($parent_tree as $article) {
+    	$level = count($article_tree);
+    	$max_level = $level;
+    	$article_tree[] = array('Level' => $level, 'Article' => $article);
+    }
+    
+    // navigate to subordinates if global option set or if top hierarchy page
+	global $wgHierarchyNavigateSubordinates;
+	$navigate_subordinates = $wgHierarchyNavigateSubordinates || empty($item->mParentArticleId);
+    
+    // insert peer articles into article tree
+    $bottom_parent = $parent_tree[count($parent_tree) - 1];
+    if (!empty($bottom_parent) && !empty($bottom_parent->mArticleId)) {
+        $peers = wfHierarchySubordinateArticles($bottom_parent->mArticleId);
+    	$level = count($article_tree);
+    	$max_level = $level;
+		foreach ($peers as $article_id) {
+	    	$article = HierarchyItem::newFromArticleId($article_id);
+	    	if (!empty($article)) {
+	    		$article_tree[] = array('Level' => $level, 'Article' => $article);
+	    		if (($article_id == $item->mArticleId) && $navigate_subordinates) { // show subordinates of current item?
+	    			// insert sibling articles into article tree
+					$siblings = wfHierarchySubordinateArticles($article_id);
+					foreach ($siblings as $sibling_id) {
+				    	$sibling_article = HierarchyItem::newFromArticleId($sibling_id);
+				    	if (!empty($sibling_article)) {
+				    		$sibling_level = $level + 1;
+					    	$max_level = $sibling_level;
+				    		$article_tree[] = array('Level' => $sibling_level, 'Article' => $sibling_article);
+				    	}
+					}					
+	    		}
+	    	}
+		}
+    }
+    
+    // get link to top hierarchy page
+    $top_hierarchy_article_link = "";
+    if (count($article_tree) > 0 && $article_tree[0]['Level'] == 0) {  // there is a top hierarchy page on the array
+	    $top_hierarchy_article_entry = array_shift($article_tree);
+		$top_hierarchy_article = $top_hierarchy_article_entry['Article'];
+		if (!empty($top_hierarchy_article) && !empty($top_hierarchy_article->mArticleId)) {
+			$top_hierarchy_article_link = wfHierarchyArticleLink($top_hierarchy_article->mArticleId);
+		}
+	}
 
-    // index article
+    // get link to index article
     if ($item->mIndexArticleId) {
     	$msg = htmlspecialchars(wfMsg('hierarchy_index'));
-        $index_article = wfHierarchyArticleLink($item->mIndexArticleId, $msg);
+        $index_article_link = wfHierarchyArticleLink($item->mIndexArticleId, $msg);
     } else {
-        $index_article = "";
+        $index_article_link = "";
     }
 
-    // other articles
-    if ($item->mParentArticleId) {  // has parent; show parent and siblings
-        $parent_article = wfHierarchyArticleLink($item->mParentArticleId);
-        $siblings = wfHierarchySubordinateArticles($item->mParentArticleId);
-    } else {  // doesn't have parent; show item
-        $parent_article = wfHierarchyArticleLink($item->mArticleId);
-        $siblings = "";
-    }
+	// table start
+	global $wgHierarchyNavigationBoxBaseWidth, $wgHierarchyNavigationBoxIncrement;
+    $box_width = $wgHierarchyNavigationBoxBaseWidth + $wgHierarchyNavigationBoxIncrement * $max_level;
+	$table_start = 
+		"{|style=\"padding: 0.2em; margin-left:15px; border: 1px solid #B8C7D9; background:#f5faff; text-align:center; font-size: 95%\" width={$box_width}px align=\"right\"\n";
+		
+	// top hierarchy page row
+	if (!empty($top_hierarchy_article_link)) {
+		$top_row =
+	        "|-\n" .
+	        "|style=\"background: #cedff2; padding: 0.2em;\" |'''$top_hierarchy_article_link'''\n";
+	} else {
+		$top_row = "";
+	}
 
-    // create hierarchy navigation box
-    $result = "";
-    if ($parent_article) {
-        $result .=
-            "{|style=\"padding: 0.2em; margin-left:15px; border: 1px solid #B8C7D9; background:#f5faff; text-align:center; font-size: 95%\" width=150px align=\"right\"\n" .
+	// peer and sibling pages area
+	$content_area = 
+        "|-\n" .
+        "|style=\"text-align:left;\" |\n";
+    foreach($article_tree as $article_entry) {
+    	$level = $article_entry['Level'];
+    	$article = $article_entry['Article'];
+		if (!empty($article) && !empty($article->mArticleId)) {
+			$article_link = wfHierarchyArticleLink($article->mArticleId);
+			if (!empty($article_link)) {
+				$content_area .= str_repeat("*", $level) . $article_link . "\n";
+			}
+		}
+    }
+    
+    // index page row
+	if (!empty($index_article_link)) {
+		$index_row =
             "|-\n" .
-            "|style=\"background: #cedff2; padding: 0.2em;\" |'''$parent_article'''\n";
-        if ($siblings) $result .=
-            "|-\n" .
-            "|style=\"text-align:left;\" |\n" .
-            "$siblings";
-        if ($index_article) {
-            $result .= "|-\n|";
-            if ($siblings) $result .= "<hr>";
-            $result .= "$index_article\n";
-        }
-        $result .=
-            "|}\n";
-    }
+            "|<hr>\n" .
+            "$index_article_link\n";
+	} else {
+		$index_row = "";
+	}
+	
+	// table end
+	$table_end =
+		"|}\n";
 
-    return $result;
+	// navigation box
+    $navigation_box = $table_start . $top_row . $content_area . $index_row . $table_end;
+    return $navigation_box;
 }
 
 function wfHierarchyBottomRender( &$parser ) {
@@ -430,7 +526,22 @@ function wfHierarchyBottomRender( &$parser ) {
     if ($item == NULL) return "";
 
     // subordinate pages
-    $subordinate = wfHierarchySubordinateArticles($item->mArticleId);
+    $embedded_subordinates = "";
+    global $wgHierarchyEmbedSubordinates;
+    if ($wgHierarchyEmbedSubordinates) {
+	    $subordinates = wfHierarchySubordinateArticles($item->mArticleId);
+	    if (count($subordinates) > 0) {
+	    	$separator = wfMsg('hierarchy_subordinates_separator');
+	    	if (!empty($separator)) $separator .= "\n";
+	        $embedded_subordinates .= $separator; 
+	        foreach ($subordinates as $subordinate) {
+		        $link = wfHierarchyArticleLink($subordinate);
+		        if (!empty($link)) {
+	            	$embedded_subordinates .= "* $link\n";
+	            }
+	        }
+	    }
+	}
 
     // navigation links
     $previous_article = wfHierarchyArticleLink($item->mPreviousArticleId);
@@ -447,8 +558,9 @@ function wfHierarchyBottomRender( &$parser ) {
     }
     if ($navigation) $navigation = "\n\n----\n" . $navigation . "\n";
 
-    // return wiki text
-    return $subordinate . $navigation;
+    // result
+    $result = "\n" . $embedded_subordinates . $navigation;
+    return $result;
 }
 
 function wfHierarchyGetItem($parser) {
@@ -460,6 +572,7 @@ function wfHierarchyGetItem($parser) {
     return $item;
 }
 
+// Returns an array with the IDs of the articles subordinated to $article_id.
 function wfHierarchySubordinateArticles($article_id) {
     $article_id = intval($article_id);
     $fname = 'wfHierarchySubordinateArticles';
@@ -475,15 +588,15 @@ function wfHierarchySubordinateArticles($article_id) {
             'ORDER BY'  => 'Sequence',
         )
     );
-    $result = "";
+    $result = array();
     while( $s = $dbr->fetchObject( $res ) ) {
-        $link = wfHierarchyArticleLink($s->ArticleId);
-        if ($link) $result .= "* " . $link . "\n";
+    	$result[] = $s->ArticleId;
     }
     return $result;
 }
 
 function wfHierarchyArticleLink($article_id, $description = '') {
+	if (empty($article_id)) return "";
     $title = Title::newFromID($article_id);
     if ($title == NULL) return "";
     if (!$title->exists()) return "";
