@@ -1,6 +1,5 @@
-<pre>
 <?php
-// Hierarchy WikiMedia extension.
+// Hierarchy MediaWiki extension.
 // Creates a hierarchical page navigation structure.
 
 // Copyright (C) 2007, Benner Sistemas.
@@ -605,6 +604,3 @@ function wfHierarchyArticleLink($article_id, $description = '') {
     if ($description) $description = "|$description";
     return "[[" . $article_title . $description . "]]";
 }
-
-?>
-</pre>
