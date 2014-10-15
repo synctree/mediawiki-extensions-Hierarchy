@@ -1,7 +1,7 @@
 <?php
 // Hierarchy MediaWiki extension.
 // Creates a hierarchical page navigation structure.
-
+ 
 // Copyright (C) 2007, Benner Sistemas.
 //
 // This program is free software; you can redistribute it and/or modify
@@ -17,39 +17,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
-
+ 
 $HierarchyVersion = '1.1.0';
-
+ 
 #----------------------------------------------------------------------------
 #    Internationalized messages
 #----------------------------------------------------------------------------
 
-$wgHierarchyPrefix = "hierarchy_";
-$wgHierarchyMessages = array();
-
-// English
-$wgHierarchyMessages['en'] = array(
-    $wgHierarchyPrefix . 'index' => "Index",    
-    $wgHierarchyPrefix . 'subordinates_separator' => "----\n'''Subordinate pages:'''",
-);
-
-// Portuguese - Português
-$wgHierarchyMessages['pt'] = array(
-    $wgHierarchyPrefix . 'index' => utf8_encode("Índice"),
-    $wgHierarchyPrefix . 'subordinates_separator' => utf8_encode("----\n'''Páginas subordinadas:'''"),    
-);
-
-// Portuguese (Brazilian) - Português (brasileiro)
-$wgHierarchyMessages['pt-br'] = array(
-    $wgHierarchyPrefix . 'index' => utf8_encode("Índice"),
-    $wgHierarchyPrefix . 'subordinates_separator' => utf8_encode("----\n'''Páginas subordinadas:'''"),    
-);
-
-// German - Deutsch
-$wgHierarchyMessages['de'] = array(
-    $wgHierarchyPrefix . 'index' => utf8_encode("Inhalt"),
-    $wgHierarchyPrefix . 'subordinates_separator' => utf8_encode("----\n'''Unterseiten:'''"),   
-);
+$wgMessagesDirs['Hierarchy'] = __DIR__ . '/i18n';
 
 #----------------------------------------------------------------------------
 #    Extension initialization
@@ -63,39 +38,34 @@ $wgExtensionCredits['parserhook'][] = array(
     'url'=>'http://www.mediawiki.org/wiki/Extension:Hierarchy',
     'description' => 'Creates a hierarchical page navigation structure'
     );
-
+ 
 // Register extension
 $wgExtensionFunctions[] = "wfHierarchyExtension";
 $wgHooks['ArticleSaveComplete'][] = 'fnHierarchySaveHook';
-
+ 
 # Initialize extension
 function wfHierarchyExtension() {
     // register the extension with the WikiText parser
     global $wgParser;
     $wgParser->setHook( "index", "renderHierarchyIndex" );
-    // register messages
-    global $wgMessageCache, $wgHierarchyMessages;
-    foreach( $wgHierarchyMessages as $sLang => $aMsgs ) {
-        $wgMessageCache->addMessages( $aMsgs, $sLang );
-    }    
 }
-
+ 
 $wgHierarchyEmbedSubordinates = true;
 $wgHierarchyNavigateSubordinates = true;
 $wgHierarchyNavigationBoxBaseWidth = 140;
 $wgHierarchyNavigationBoxIncrement = 19;
-    
+ 
 #----------------------------------------------------------------------------
 #    Extension implementation
 #----------------------------------------------------------------------------
 
 # Processes a hierarchy index.
-function renderHierarchyIndex( $input, $argv, &$parser ) {
+function renderHierarchyIndex( $input, $argv, $parser ) {
     $hierarchy = new Hierarchy();
     return $hierarchy->Render($input, $parser->mTitle, $parser->mOptions);
 }
-
-function fnHierarchySaveHook(&$article, &$user, &$text, &$summary, &$minoredit, &$watchthis, &$sectionanchor, &$flags) {
+ 
+function fnHierarchySaveHook(&$article, &$user, $text, $summary, $minoredit, $watchthis, $sectionanchor, $flags) {
     // search for <index> tag
     $pattern = '@<index>(.*?)</index>@is';
     if (preg_match($pattern, $text, $matches, PREG_OFFSET_CAPTURE)) {
@@ -105,40 +75,40 @@ function fnHierarchySaveHook(&$article, &$user, &$text, &$summary, &$minoredit, 
     }
     return true;
 }
-
+ 
 #----------------------------------------------------------------------------
 #    Hierarchy class for extension
 #----------------------------------------------------------------------------
 
 class Hierarchy {
-
+ 
     function Hierarchy() {
     }
-
+ 
     function Render($input, $title, $options) {
         // parse text
         $localParser = new Parser();
         $output = $localParser->parse($input, $title, $options);
         $html_text = $output->getText();
         $offset = 0;
-
+ 
         // find root page
         $pattern = '@<p>(<a href=.*?</a>).*?</p>@s';
         if (!preg_match($pattern, $html_text, $matches, PREG_OFFSET_CAPTURE, $offset)) return $html_text;
         $root_page_link = $matches[1][0];
         $offset = $matches[0][1];
-
+ 
         // find TOC
         $pattern = '@<table id="toc"(.*?)</table>@s';
         if (!preg_match($pattern, $html_text, $matches, PREG_OFFSET_CAPTURE, $offset)) return $html_text;
         $toc = $matches[0][0];
         $offset = $matches[0][1];
-
+ 
         // change TOC title
         $pattern = '@(<div id="toctitle"><h2>)(.*?)(</h2></div>)@';
         $replacement = '$1' . $root_page_link . '$3';
         $toc = preg_replace ($pattern, $replacement, $toc, 1);
-
+ 
         // change TOC links
         $pattern = '@<li class="toclevel-(.*?)"><a href="(#.*?)"><span class="tocnumber">(.*?)</span> <span class="toctext">(.*?)</span></a>@';
         do {
@@ -152,11 +122,11 @@ class Hierarchy {
                 $toc = substr_replace($toc, $page_url, $url_position, $url_length);
             }
         } while ($topic_found);
-
+ 
         // return HTML output
         return $toc;
     }
-
+ 
     function Save($text, $article, $user) {
         $article_id = $article->getID();
         if ($article_id) {  // Verify that the page has been saved at least once
@@ -165,7 +135,7 @@ class Hierarchy {
             $this->SaveIndex($parsed_text, $article_id);
         }
     }
-
+ 
     // Erases information about this hierarchy in the database.
     function EraseInformation($index_article_id) {
         $fname = 'Hierarchy::EraseInformation';
@@ -176,7 +146,7 @@ class Hierarchy {
             ), $fname
         );
     }
-
+ 
     function SaveIndex($text, $index_article_id) {
         // get hierarchy root
         $offset = 0;
@@ -254,13 +224,13 @@ class Hierarchy {
         }
     }
 }
-
+ 
 #----------------------------------------------------------------------------
 #    HierarchyItem class for extension
 #----------------------------------------------------------------------------
 
 class HierarchyItem {
-
+ 
     var $mId;
     var $mIndexArticleId;
     var $mTocLevel;
@@ -271,10 +241,10 @@ class HierarchyItem {
     var $mPreviousArticleId;
     var $mNextArticleId;
     var $mParentArticleId;
-
+ 
     function HierarchyItem() {
     }
-
+ 
     static function newFromArticleId($article_id) {
         $article_id = intval($article_id);
         $fname = 'HierarchyItem::newFromID';
@@ -313,7 +283,7 @@ class HierarchyItem {
         }
         return $item;
     }
-
+ 
     /**
      * Add object to the database
      */
@@ -337,7 +307,7 @@ class HierarchyItem {
         );
         $this->mId = $dbw->insertId();
     }
-
+ 
     /**
     * Update NextArticleId in the database
     */
@@ -349,7 +319,7 @@ class HierarchyItem {
                 array( 'Id' => $this->mId ),
                 $fname );
     }
-
+ 
     // Deletes any record with the current ArticleId from the database.
     function deleteArticleId() {
         $fname = 'HierarchyItem::delete';
@@ -360,9 +330,9 @@ class HierarchyItem {
             ), $fname
         );
     }
-
+ 
 }
-
+ 
 #----------------------------------------------------------------------------
 #    Parser functions initialization
 #----------------------------------------------------------------------------
@@ -370,14 +340,14 @@ class HierarchyItem {
 // register parser functions
 $wgExtensionFunctions[] = 'wfHierarchyParserFunction_Setup';
 $wgHooks['LanguageGetMagic'][] = 'wfHierarchyParserFunction_Magic';
-
+ 
 function wfHierarchyParserFunction_Setup() {
     global $wgParser;
     # Set a function hook associating the magic word with our function
     $wgParser->setFunctionHook( 'hierarchy-top', 'wfHierarchyTopRender' );
     $wgParser->setFunctionHook( 'hierarchy-bottom', 'wfHierarchyBottomRender' );
 }
-
+ 
 function wfHierarchyParserFunction_Magic( &$magicWords, $langCode ) {
     # Add the magic word
     # The first array element is case sensitivity, in this case it is not case sensitive
@@ -387,7 +357,7 @@ function wfHierarchyParserFunction_Magic( &$magicWords, $langCode ) {
     # unless we return true, other parser functions extensions won't get loaded.
     return true;
 }
-
+ 
 #----------------------------------------------------------------------------
 #    Parser functions implementation
 #----------------------------------------------------------------------------
@@ -396,7 +366,7 @@ function wfHierarchyTopRender( &$parser ) {
     // get item
     $item = wfHierarchyGetItem($parser);
     if ($item == NULL) return "";
-    
+ 
     // build parent tree
     $parent_tree = array();
     $parent_id = $item->mParentArticleId;  // start with parent of current item
@@ -412,7 +382,7 @@ function wfHierarchyTopRender( &$parser ) {
     	}
     } while (!empty($parent_id));  // go all the way up to the top
     if (count($parent_tree) == 0) $parent_tree[] = $item;  // item is the top hierarchy page
-    
+ 
     // convert parent tree to article tree
     $article_tree = array();
     $max_level = 0;
@@ -421,11 +391,11 @@ function wfHierarchyTopRender( &$parser ) {
     	$max_level = $level;
     	$article_tree[] = array('Level' => $level, 'Article' => $article);
     }
-    
+ 
     // navigate to subordinates if global option set or if top hierarchy page
 	global $wgHierarchyNavigateSubordinates;
 	$navigate_subordinates = $wgHierarchyNavigateSubordinates || empty($item->mParentArticleId);
-    
+ 
     // insert peer articles into article tree
     $bottom_parent = $parent_tree[count($parent_tree) - 1];
     if (!empty($bottom_parent) && !empty($bottom_parent->mArticleId)) {
@@ -451,7 +421,7 @@ function wfHierarchyTopRender( &$parser ) {
 	    	}
 		}
     }
-    
+ 
     // get link to top hierarchy page
     $top_hierarchy_article_link = "";
     if (count($article_tree) > 0 && $article_tree[0]['Level'] == 0) {  // there is a top hierarchy page on the array
@@ -459,32 +429,36 @@ function wfHierarchyTopRender( &$parser ) {
 		$top_hierarchy_article = $top_hierarchy_article_entry['Article'];
 		if (!empty($top_hierarchy_article) && !empty($top_hierarchy_article->mArticleId)) {
 			$top_hierarchy_article_link = wfHierarchyArticleLink($top_hierarchy_article->mArticleId);
+			$titleTop = Title::newFromID($top_hierarchy_article->mArticleId); //BAREFOOT MOD
 		}
 	}
-
-    // get link to index article
+ 
+    // get link to index article BAREFOOT MOD
     if ($item->mIndexArticleId) {
-    	$msg = htmlspecialchars(wfMsg('hierarchy_index'));
+    	$msg = 'home';
         $index_article_link = wfHierarchyArticleLink($item->mIndexArticleId, $msg);
     } else {
         $index_article_link = "";
     }
-
-	// table start
+    
+    // Prev & Next nav BAREFOOT MOD
+    $navigation = wfHierarchyBuildNav($item);
+ 
+	// table start BAREFOOT MOD
 	global $wgHierarchyNavigationBoxBaseWidth, $wgHierarchyNavigationBoxIncrement;
-    $box_width = $wgHierarchyNavigationBoxBaseWidth + $wgHierarchyNavigationBoxIncrement * $max_level;
+    $box_width = $wgHierarchyNavigationBoxBaseWidth + $wgHierarchyNavigationBoxIncrement * $max_level + 50;
 	$table_start = 
-		"{|style=\"padding: 0.2em; margin-left:15px; border: 1px solid #B8C7D9; background:#f5faff; text-align:center; font-size: 95%\" width={$box_width}px align=\"right\"\n";
-		
-	// top hierarchy page row
+		"{|style=\"padding: 0.2em; margin-left:15px; border: 1px solid #808080; background:#ffffff; text-align:center; font-size: 95%\" width={$box_width}px align=\"right\"\n";
+ 
+	// top hierarchy page row BAREFOOT MOD
 	if (!empty($top_hierarchy_article_link)) {
 		$top_row =
 	        "|-\n" .
-	        "|style=\"background: #cedff2; padding: 0.2em;\" |'''$top_hierarchy_article_link'''\n";
+	        "|style=\"background: #bd1f2c; color: #ffffff; font-weight: bold; padding: 0.2em;\" |" . $titleTop . "\n";
 	} else {
 		$top_row = "";
 	}
-
+ 
 	// peer and sibling pages area
 	$content_area = 
         "|-\n" .
@@ -499,7 +473,7 @@ function wfHierarchyTopRender( &$parser ) {
 			}
 		}
     }
-    
+ 
     // index page row
 	if (!empty($index_article_link)) {
 		$index_row =
@@ -509,21 +483,21 @@ function wfHierarchyTopRender( &$parser ) {
 	} else {
 		$index_row = "";
 	}
-	
+ 
 	// table end
 	$table_end =
 		"|}\n";
-
-	// navigation box
-    $navigation_box = $table_start . $top_row . $content_area . $index_row . $table_end;
+ 
+	// navigation box BAREFOOT MOD
+    $navigation_box = $navigation . $table_start . $top_row . $content_area . $index_row . $table_end;
     return $navigation_box;
 }
-
+ 
 function wfHierarchyBottomRender( &$parser ) {
     // get item
     $item = wfHierarchyGetItem($parser);
     if ($item == NULL) return "";
-
+ 
     // subordinate pages
     $embedded_subordinates = "";
     global $wgHierarchyEmbedSubordinates;
@@ -541,25 +515,34 @@ function wfHierarchyBottomRender( &$parser ) {
 	        }
 	    }
 	}
+ 
+  	$navigation = wfHierarchyBuildNav($item);
+ 
+    // result
+    $result = "\n" . $embedded_subordinates . $navigation;
+    return $result;
+}
 
-    // navigation links
+//BAREFOOT MOD - function builds NEXT & PREV nav links
+function wfHierarchyBuildNav($item) {
+	 // navigation links
     $previous_article = wfHierarchyArticleLink($item->mPreviousArticleId);
     $next_article = wfHierarchyArticleLink($item->mNextArticleId);
     $navigation = "";
     if ($previous_article) {
+	    $titlePrev = Title::newFromID($item->mPreviousArticleId);
         global $wgHierarchyNavPrevious; 
-        $navigation .= $wgHierarchyNavPrevious . ' ' . $previous_article;
+        $navigation .= '[[' . $titlePrev . '| << Previous: ' . $titlePrev . ' ]]'; //BAREFOOT MOD
     }
     if ($next_article) {
-        if ($navigation) $navigation .= " | ";
+	    $titleNext = Title::newFromID($item->mNextArticleId);
+        if ($navigation) $navigation .= " &nbsp;&nbsp; ";
         global $wgHierarchyNavNext; 
-        $navigation .= $next_article . ' ' . $wgHierarchyNavNext;
+        $navigation .= '[[' . $titleNext . '| ' . $titleNext . ': Next >>]]';  //BAREFOOT MOD
     }
-    if ($navigation) $navigation = "\n\n----\n" . $navigation . "\n";
-
-    // result
-    $result = "\n" . $embedded_subordinates . $navigation;
-    return $result;
+    if ($navigation) $navigation = "\n" . $navigation . "\n";
+    
+    return $navigation;
 }
 
 function wfHierarchyGetItem($parser) {
@@ -570,7 +553,7 @@ function wfHierarchyGetItem($parser) {
     $item = HierarchyItem::newFromArticleId($article_id);
     return $item;
 }
-
+ 
 // Returns an array with the IDs of the articles subordinated to $article_id.
 function wfHierarchySubordinateArticles($article_id) {
     $article_id = intval($article_id);
@@ -593,7 +576,7 @@ function wfHierarchySubordinateArticles($article_id) {
     }
     return $result;
 }
-
+ 
 function wfHierarchyArticleLink($article_id, $description = '') {
 	if (empty($article_id)) return "";
     $title = Title::newFromID($article_id);
